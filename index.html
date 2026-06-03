@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Florida Population Density & Medicaid Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1923; color: #e0e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+    header {
+      background: linear-gradient(135deg, #1a3a5c, #0d2137);
+      padding: 12px 24px;
+      display: flex; align-items: center; gap: 16px;
+      border-bottom: 2px solid #2a6496;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    }
+    header img { height: 40px; }
+    header h1 { font-size: 1.4rem; font-weight: 600; color: #7ec8e3; letter-spacing: 0.5px; }
+    header p { font-size: 0.78rem; color: #8aa8c0; margin-top: 2px; }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    #map { flex: 1; z-index: 1; }
+
+    .sidebar {
+      width: 360px; min-width: 320px;
+      background: #131f2e;
+      display: flex; flex-direction: column;
+      border-left: 2px solid #1e3a54;
+      overflow-y: auto;
+    }
+
+    .panel {
+      padding: 16px 18px;
+      border-bottom: 1px solid #1e3a54;
+    }
+    .panel h2 {
+      font-size: 0.85rem; text-transform: uppercase;
+      letter-spacing: 1px; color: #4a90b8; margin-bottom: 10px;
+    }
+
+    .placeholder {
+      color: #4a6a8a; font-size: 0.88rem; text-align: center;
+      padding: 20px 0;
+    }
+
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-card {
+      background: #0d1e2e; border-radius: 8px; padding: 12px 14px;
+      border: 1px solid #1e3a54;
+    }
+    .stat-card .label { font-size: 0.72rem; color: #6a9ab8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 1.2rem; font-weight: 700; color: #7ec8e3; margin-top: 4px; }
+    .stat-card .sub { font-size: 0.72rem; color: #8aa8c0; margin-top: 2px; }
+
+    .county-name {
+      font-size: 1.3rem; font-weight: 700; color: #fff;
+      margin-bottom: 4px;
+    }
+    .county-sub { font-size: 0.82rem; color: #7a9ab8; }
+
+    .chart-wrap { padding: 0 4px; height: 200px; position: relative; }
+
+    .medicaid-bars { margin-top: 8px; }
+    .age-row { margin-bottom: 10px; }
+    .age-label { font-size: 0.78rem; color: #8aa8c0; display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .bar-bg { background: #0d1e2e; border-radius: 4px; height: 10px; }
+    .bar-fill { height: 10px; border-radius: 4px; transition: width 0.4s ease; }
+
+    .legend-wrap { padding: 10px 18px 14px; }
+    .legend-wrap h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #4a90b8; margin-bottom: 8px; }
+    .legend-scale {
+      display: flex; border-radius: 6px; overflow: hidden;
+      height: 18px; border: 1px solid #1e3a54;
+    }
+    .legend-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #6a9ab8; margin-top: 4px; }
+
+    .toggle-wrap { display: flex; gap: 8px; padding: 0 18px 10px; }
+    .toggle-btn {
+      flex: 1; padding: 7px; border-radius: 6px; border: 1px solid #2a5a7c;
+      background: #0d1e2e; color: #7ec8e3; font-size: 0.78rem; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .toggle-btn.active { background: #1a4a6a; border-color: #4a90b8; color: #fff; font-weight: 600; }
+
+    .source-note {
+      font-size: 0.68rem; color: #4a6a8a; padding: 8px 18px 12px;
+      line-height: 1.5;
+    }
+    .source-note a { color: #4a90b8; text-decoration: none; }
+    .source-note a:hover { text-decoration: underline; }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #0d1e2e !important; }
+
+    .county-tooltip {
+      background: rgba(13,30,46,0.95);
+      border: 1px solid #2a6496;
+      border-radius: 6px;
+      color: #e0e8f0;
+      font-size: 0.82rem;
+      padding: 8px 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: absolute; inset: 0; z-index: 9999;
+      background: rgba(13,25,35,0.88);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+    }
+    #loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid #1e3a54;
+      border-top-color: #3ab0df;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: #7ec8e3; font-size: 0.92rem; }
+    .error-box {
+      background: #2a1010; border: 1px solid #8b2020;
+      border-radius: 8px; padding: 18px 24px;
+      color: #f08080; font-size: 0.88rem; max-width: 360px;
+      text-align: center; line-height: 1.6;
+    }
+
+    /* Selected county ring */
+    .county-selected-label {
+      font-size: 0.72rem; color: #ffdd57;
+      text-transform: uppercase; letter-spacing: 1px;
+      margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+    }
+    .county-selected-label::before {
+      content: ''; display: inline-block;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #ffdd57; flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🗺 Florida Population Density &amp; Medicaid Dashboard</h1>
+    <p>County-level data · 2020 Census · ACS 2024 · FL Agency for Health Care Administration</p>
+  </div>
+</header>
+
+<div class="main">
+  <div id="map" style="position:relative;">
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Loading county boundaries…</div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="toggle-wrap" style="padding-top:14px;">
+      <button class="toggle-btn active" id="btn-density" onclick="setMode('density')">Population Density</button>
+      <button class="toggle-btn" id="btn-medicaid" onclick="setMode('medicaid')">Medicaid %</button>
+    </div>
+
+    <!-- legend -->
+    <div class="legend-wrap">
+      <h2 id="legend-title">Density (people/sq mi)</h2>
+      <div class="legend-scale" id="legend-scale"></div>
+      <div class="legend-labels" id="legend-labels"></div>
+    </div>
+
+    <!-- county info -->
+    <div class="panel" id="county-panel">
+      <div class="placeholder">Click a county on the map to view details</div>
+    </div>
+
+    <!-- chart -->
+    <div class="panel" id="chart-panel" style="display:none;">
+      <h2>Medicaid Enrollment by Age</h2>
+      <div class="chart-wrap">
+        <canvas id="medicaidChart"></canvas>
+      </div>
+    </div>
+
+    <!-- medicaid age bars -->
+    <div class="panel" id="bars-panel" style="display:none;">
+      <h2>Age Group Breakdown</h2>
+      <div class="medicaid-bars" id="age-bars"></div>
+    </div>
+
+    <div class="source-note">
+      Data: <a href="https://data.census.gov/profile/Florida?g=040XX00US12" target="_blank">U.S. Census Bureau</a> &nbsp;|&nbsp;
+      <a href="https://ahca.myflorida.com/content/download/27161/file/Program_Group_by_County.pdf" target="_blank">FL AHCA – Medicaid Eligibles by Program-Group by County</a><br>
+      Population: 2020 Decennial Census &amp; ACS estimates. &nbsp;|&nbsp;
+      Medicaid: AHCA report as of 8/31/2025.
+    </div>
+  </div>
+</div>
+
+<script>
+let countyData = {};
+let geojsonLayer;
+let selectedLayer = null;
+let mapMode = 'density';
+let chartInstance = null;
+
+// Color scales
+const densityBreaks = [0, 50, 150, 400, 1000, 3000, 99999];
+const densityColors = ['#0d3349','#0e4d6e','#1167a0','#1a87c8','#3ab0df','#7dd6ef','#c8f0ff'];
+const medicaidBreaks = [0, 8, 12, 16, 20, 25, 100];
+const medicaidColors = ['#0d3349','#1a5e2e','#2e8b45','#52b867','#82d48f','#b8ebc0','#e0fae4'];
+const ageColors = ['#3ab0df','#e8a838','#e85858','#7dd6ef'];
+const ageGroups = ['0-18','19-44','45-64','65+'];
+
+function getColor(value, breaks, colors) {
+  for (let i = breaks.length - 2; i >= 0; i--) {
+    if (value >= breaks[i]) return colors[i];
+  }
+  return colors[0];
+}
+
+function getCountyName(feature) {
+  const p = feature.properties;
+  // Handle NAME, name, NAMELSAD (Census TIGER), BASENAME
+  let raw = p.NAME || p.name || p.NAMELSAD || p.BASENAME || '';
+  raw = raw.replace(/\s+County$/i, '').trim();
+  // Normalize Census Bureau full spelling to match our data keys
+  raw = raw.replace(/^Saint\s+/i, 'St. ');
+  raw = raw.replace(/^De\s+Soto$/i, 'DeSoto');
+  return raw;
+}
+
+function styleFeature(feature) {
+  const clean = getCountyName(feature);
+  const d = countyData[clean];
+  let fillColor = '#1a3a5c';
+  if (d) {
+    fillColor = mapMode === 'density'
+      ? getColor(d.density, densityBreaks, densityColors)
+      : getColor(d.medicaid_pct, medicaidBreaks, medicaidColors);
+  }
+  return { fillColor, weight: 1, opacity: 1, color: '#2a6496', fillOpacity: 0.82 };
+}
+
+function highlightFeature(e) {
+  if (selectedLayer === e.target) return;
+  e.target.setStyle({ weight: 2, color: '#7ec8e3', fillOpacity: 0.92 });
+  e.target.bringToFront();
+  updateTooltip(e.target);
+}
+
+function resetHighlight(e) {
+  if (selectedLayer !== e.target) {
+    geojsonLayer.resetStyle(e.target);
+  }
+}
+
+function updateTooltip(layer) {
+  const name = getCountyName(layer.feature);
+  const d = countyData[name];
+  if (!d) return;
+  layer.bindTooltip(
+    `<div class="county-tooltip">
+      <b>${name} County</b><br>
+      Density: <b>${d.density.toLocaleString()}</b>/sq mi &nbsp;·&nbsp;
+      Pop: <b>${d.population.toLocaleString()}</b><br>
+      Medicaid: <b>${d.medicaid_pct}%</b> (${d.medicaid_total.toLocaleString()} enrolled)
+    </div>`,
+    { sticky: true, opacity: 1 }
+  ).openTooltip();
+}
+
+function selectCounty(e) {
+  // Deselect previous
+  if (selectedLayer) {
+    geojsonLayer.resetStyle(selectedLayer);
+    selectedLayer.closeTooltip();
+  }
+  selectedLayer = e.target;
+  // Gold selection ring
+  selectedLayer.setStyle({ weight: 3.5, color: '#ffdd57', fillOpacity: 0.95 });
+  selectedLayer.bringToFront();
+
+  const name = getCountyName(e.target.feature);
+  const d = countyData[name];
+  renderCountyPanel(name, d);
+}
+
+function renderCountyPanel(name, d) {
+  if (!d) {
+    document.getElementById('county-panel').innerHTML =
+      `<div class="county-name">${name} County</div>
+       <div class="county-sub" style="color:#f08080;margin-top:8px;">No data available for this county.</div>`;
+    return;
+  }
+
+  document.getElementById('county-panel').innerHTML = `
+    <div class="county-selected-label">Selected County</div>
+    <div class="county-name">${name} County</div>
+    <div class="county-sub">Florida &nbsp;·&nbsp; FIPS State 12</div>
+    <div class="stat-grid" style="margin-top:12px;">
+      <div class="stat-card">
+        <div class="label">Population</div>
+        <div class="value">${d.population.toLocaleString()}</div>
+        <div class="sub">2020 Census</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Density</div>
+        <div class="value">${d.density.toLocaleString()}</div>
+        <div class="sub">people / sq mi</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Area</div>
+        <div class="value">${d.area_sq_mi.toLocaleString()}</div>
+        <div class="sub">sq miles (land)</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Medicaid</div>
+        <div class="value">${d.medicaid_pct}%</div>
+        <div class="sub">${d.medicaid_total.toLocaleString()} enrolled</div>
+      </div>
+    </div>`;
+
+  document.getElementById('chart-panel').style.display = '';
+  document.getElementById('bars-panel').style.display = '';
+
+  const ctx = document.getElementById('medicaidChart').getContext('2d');
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ageGroups,
+      datasets: [{
+        data: ageGroups.map(g => d.medicaid[g]),
+        backgroundColor: ageColors,
+        borderColor: '#131f2e',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8aa8c0', font: { size: 11 }, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            label: ctx =>
+              ` ${ctx.label}: ${ctx.parsed.toLocaleString()} (${Math.round(ctx.parsed / d.medicaid_total * 100)}%)`
+          }
+        }
+      }
+    }
+  });
+
+  const maxVal = Math.max(...ageGroups.map(g => d.medicaid[g]));
+  document.getElementById('age-bars').innerHTML = ageGroups.map((g, i) => {
+    const val = d.medicaid[g];
+    const pct = Math.round(val / maxVal * 100);
+    return `<div class="age-row">
+      <div class="age-label"><span>Ages ${g}</span><span>${val.toLocaleString()}</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${ageColors[i]};"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function setMode(mode) {
+  mapMode = mode;
+  document.getElementById('btn-density').classList.toggle('active', mode === 'density');
+  document.getElementById('btn-medicaid').classList.toggle('active', mode === 'medicaid');
+  if (geojsonLayer) geojsonLayer.setStyle(styleFeature);
+  updateLegend();
+}
+
+function updateLegend() {
+  const isDensity = mapMode === 'density';
+  document.getElementById('legend-title').textContent =
+    isDensity ? 'Density (people / sq mi)' : 'Medicaid Enrolled (% of population)';
+  const colors = isDensity ? densityColors : medicaidColors;
+  const ticks  = isDensity
+    ? ['0','50','150','400','1k','3k','3k+']
+    : ['0%','8%','12%','16%','20%','25%','25%+'];
+  document.getElementById('legend-scale').innerHTML =
+    colors.map(c => `<div style="flex:1;background:${c};"></div>`).join('');
+  document.getElementById('legend-labels').innerHTML =
+    ticks.map(t => `<span>${t}</span>`).join('');
+}
+
+function showError(msg) {
+  const ov = document.getElementById('loading-overlay');
+  ov.innerHTML = `<div class="error-box">⚠️ ${msg}<br><br>
+    <small>Ensure the Flask server has internet access to download county boundaries on first run.</small></div>`;
+}
+
+async function init() {
+  const map = L.map('map', { center: [27.8, -83.5], zoom: 7 });
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(map);
+
+  // Load county stats from Flask
+  const statsRes = await fetch('/api/counties');
+  countyData = await statsRes.json();
+
+  // GeoJSON sources – browser tries each in order.
+  // Direct CDN URLs bypass server-side SSL issues on this machine.
+  const GEO_SOURCES = [
+    '/api/florida-geojson',   // Flask proxy (server-side cache, filtered to FL)
+    // Plotly all-US counties dataset – filtered to FL FIPS 12 client-side
+    'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json',
+  ];
+
+  document.getElementById('loading-text').textContent = 'Fetching county boundaries…';
+  let geoData = null;
+
+  for (const url of GEO_SOURCES) {
+    try {
+      document.getElementById('loading-text').textContent = `Loading: ${url.replace(/^https?:\/\/[^/]+/, '')}`;
+      const r = await fetch(url);
+      if (!r.ok) { console.warn(url, r.status); continue; }
+      const data = await r.json();
+      let features = data.features || [];
+      // If this is the all-US dataset (plotly), filter to Florida FIPS 12
+      if (features.length > 200) {
+        features = features.filter(f => {
+          const id = f.id || (f.properties && (f.properties.GEOID || f.properties.GEO_ID || ''));
+          return String(id).startsWith('12') || String(id).startsWith('050US12');
+        });
+      }
+      if (features.length >= 60) {
+        geoData = { type: 'FeatureCollection', features };
+        console.info('Loaded GeoJSON from', url, '–', features.length, 'features');
+        break;
+      }
+    } catch (e) { console.warn('GeoJSON fetch failed', url, e); }
+  }
+
+  if (!geoData) {
+    showError('Could not load county boundary data from any source.<br>Check network/console for details.');
+    return;
+  }
+
+  geojsonLayer = L.geoJSON(geoData, {
+    style: styleFeature,
+    onEachFeature: (feature, layer) => {
+      layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: selectCounty
+      });
+    }
+  }).addTo(map);
+
+  map.fitBounds(geojsonLayer.getBounds(), { padding: [10, 10] });
+  updateLegend();
+
+  // Hide loading overlay
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+init();
+</script>
+</body>
+</html>
