@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FX Provider Services – Knowledge Hub Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <style>
+    :root {
+      --primary:      #0078d4;
+      --primary-dark: #005a9e;
+      --bg:           #f3f3f3;
+      --user-bg:      #0078d4;
+      --user-fg:      #ffffff;
+      --bot-bg:       #ffffff;
+      --bot-fg:       #1a1a1a;
+      --border:       #ddd;
+      --radius:       12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.25);
+      flex-shrink: 0;
+    }
+    header svg { width: 32px; height: 32px; fill: white; flex-shrink: 0; }
+    header .header-text h1 { font-size: 16px; font-weight: 600; }
+    header .header-text p  { font-size: 12px; opacity: .85; margin-top: 1px; }
+
+    /* ── Chat area ── */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Welcome screen ── */
+    #welcome {
+      margin: auto;
+      text-align: center;
+      padding: 32px 20px;
+      max-width: 480px;
+    }
+    #welcome h2 { font-size: 18px; color: #333; margin-bottom: 8px; }
+    #welcome p  { font-size: 14px; color: #666; margin-bottom: 20px; }
+    .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .chip {
+      background: #fff;
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      padding: 7px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .chip:hover { background: var(--primary); color: #fff; }
+
+    /* ── Message bubbles ── */
+    .msg {
+      max-width: 72%;
+      padding: 11px 15px;
+      border-radius: var(--radius);
+      line-height: 1.55;
+      word-break: break-word;
+      font-size: 14px;
+    }
+    .msg.user {
+      background: var(--user-bg);
+      color: var(--user-fg);
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.bot {
+      background: var(--bot-bg);
+      color: var(--bot-fg);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    /* Markdown inside bot bubbles */
+    .msg.bot a             { color: var(--primary); text-decoration: none; }
+    .msg.bot a:hover       { text-decoration: underline; }
+    .msg.bot ul, .msg.bot ol { padding-left: 20px; }
+    .msg.bot li            { margin: 4px 0; }
+    .msg.bot p             { margin: 6px 0; }
+    .msg.bot p:first-child { margin-top: 0; }
+    .msg.bot p:last-child  { margin-bottom: 0; }
+    .msg.bot code          { background: #eee; padding: 2px 5px; border-radius: 4px; font-size: .88em; }
+    .msg.bot pre           { background: #eee; padding: 10px; border-radius: 6px; overflow-x: auto; }
+    .msg.bot strong        { font-weight: 600; }
+
+    /* ── Typing indicator ── */
+    .typing { display: flex; align-items: center; gap: 5px; padding: 14px 15px; }
+    .typing span {
+      width: 8px; height: 8px;
+      background: #aaa;
+      border-radius: 50%;
+      animation: bounce 1.1s infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: .18s; }
+    .typing span:nth-child(3) { animation-delay: .36s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0);    opacity: .5; }
+      40%           { transform: translateY(-5px); opacity: 1;  }
+    }
+
+    /* ── Input bar ── */
+    #input-area {
+      background: #fff;
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #msg-input {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      resize: none;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.4;
+    }
+    #msg-input:focus { border-color: var(--primary); }
+    #send-btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 42px;
+      height: 42px;
+      flex-shrink: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+    }
+    #send-btn:hover:not(:disabled) { background: var(--primary-dark); }
+    #send-btn:disabled { background: #ccc; cursor: not-allowed; }
+    #send-btn svg { width: 18px; height: 18px; fill: #fff; }
+  </style>
+</head>
+<body>
+
+<header>
+  <!-- SharePoint-style document icon -->
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 4h5v7h7v9H6V4z"/>
+  </svg>
+  <div class="header-text">
+    <h1>Knowledge Hub Assistant</h1>
+    <p>FX Provider Services &nbsp;·&nbsp; SharePoint</p>
+  </div>
+</header>
+
+<div id="chat">
+  <div id="welcome">
+    <h2>Welcome to the Knowledge Hub Assistant</h2>
+    <p>Ask me to list or search documents in the FX Provider Services Knowledge Hub folder on SharePoint.</p>
+    <div class="chips">
+      <button class="chip" onclick="suggest('Show all files')">Show all files</button>
+      <button class="chip" onclick="suggest('Search for eqhealth documents')">Search eqhealth</button>
+      <button class="chip" onclick="suggest('Find provider release documents')">Provider releases</button>
+      <button class="chip" onclick="suggest('What documents are available?')">What&rsquo;s available?</button>
+    </div>
+  </div>
+</div>
+
+<div id="input-area">
+  <textarea id="msg-input" rows="1" placeholder="Ask about documents in the Knowledge Hub…"></textarea>
+  <button id="send-btn" title="Send">
+    <!-- Send arrow icon -->
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+    </svg>
+  </button>
+</div>
+
+<script>
+  // Configure marked
+  marked.setOptions({ breaks: true, gfm: true });
+
+  const chatEl    = document.getElementById('chat');
+  const welcome   = document.getElementById('welcome');
+  const input     = document.getElementById('msg-input');
+  const sendBtn   = document.getElementById('send-btn');
+
+  // ── helpers ──────────────────────────────────────────────────────
+
+  function hideWelcome() {
+    if (welcome) { welcome.style.display = 'none'; }
+  }
+
+  function appendMsg(text, role) {
+    hideWelcome();
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    if (role === 'bot') {
+      // Render Markdown and sanitize before inserting
+      div.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    } else {
+      div.textContent = text;
+    }
+    chatEl.appendChild(div);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return div;
+  }
+
+  function showTyping() {
+    hideWelcome();
+    const div = document.createElement('div');
+    div.className = 'msg bot typing';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    chatEl.appendChild(div);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return div;
+  }
+
+  // ── send ─────────────────────────────────────────────────────────
+
+  async function send(text) {
+    text = text.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+    appendMsg(text, 'user');
+    const typing = showTyping();
+
+    try {
+      const res  = await fetch('/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: text }),
+      });
+      const data = await res.json();
+      typing.remove();
+      appendMsg(data.response || data.error || 'No response received.', 'bot');
+    } catch (err) {
+      typing.remove();
+      appendMsg('Error connecting to the server. Please try again.', 'bot');
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  function suggest(text) { send(text); }
+
+  // ── event listeners ───────────────────────────────────────────────
+
+  sendBtn.addEventListener('click', () => send(input.value));
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send(input.value);
+    }
+  });
+
+  // Auto-resize textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+</script>
+
+</body>
+</html>
