@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RFC Implementation Calendar</title>
+
+  <!-- FullCalendar 6 global bundle (includes styles) -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      background: #f3f4f6;
+      color: #1f2937;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    /* ---- Header ---- */
+    #app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    #app-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #111827;
+      letter-spacing: -0.01em;
+    }
+
+    /* ---- Status legend ---- */
+    #legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.78rem;
+      color: #374151;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+
+    .legend-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    /* ---- Error banner ---- */
+    #error-banner {
+      display: none;
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: 0.875rem;
+    }
+
+    #error-banner.visible { display: block; }
+
+    /* ---- Calendar card ---- */
+    #calendar-wrap {
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+      padding: 18px 16px;
+    }
+
+    /* Nudge FullCalendar's today highlight to match corporate palette */
+    .fc-day-today { background: #eff6ff !important; }
+
+    /* ---- Loading spinner ---- */
+    #loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9990;
+      background: rgba(255,255,255,0.55);
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      color: #4b5563;
+    }
+
+    #loading-overlay.visible { display: flex; }
+
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 3px solid #d1d5db;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- Modal overlay ---- */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.4);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    #modal-overlay.visible { display: flex; }
+
+    /* ---- Modal card ---- */
+    #modal {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 26px 24px 22px;
+      max-width: 560px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.22);
+      position: relative;
+    }
+
+    #modal-close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      cursor: pointer;
+      color: #9ca3af;
+    }
+
+    #modal-close:hover { color: #1f2937; }
+
+    #modal-key {
+      display: inline-block;
+      background: #f3f4f6;
+      border-radius: 4px;
+      padding: 2px 9px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #374151;
+      margin-bottom: 8px;
+    }
+
+    #modal-summary {
+      font-size: 1.05rem;
+      font-weight: 600;
+      line-height: 1.45;
+      color: #111827;
+      margin-bottom: 16px;
+      padding-right: 24px;
+    }
+
+    /* ---- Detail grid ---- */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 7px 12px;
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+
+    .dl { font-weight: 600; color: #6b7280; }
+    .dv { color: #1f2937; }
+
+    .status-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.02em;
+    }
+
+    /* ---- Description ---- */
+    #modal-desc {
+      font-size: 0.82rem;
+      color: #6b7280;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.6;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    /* ---- JIRA link button ---- */
+    #modal-link {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 8px 18px;
+      background: #0052cc;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    #modal-link:hover { background: #0747a6; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 600px) {
+      #app-header { flex-direction: column; align-items: flex-start; }
+      .detail-grid { grid-template-columns: 100px 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- Loading indicator -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  Loading RFC data…
+</div>
+
+<!-- Page header -->
+<div id="app-header">
+  <span id="app-title">RFC Implementation Calendar</span>
+  <div id="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#6f42c1;"></div>Open / New</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#17a2b8;"></div>Approved</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fd7e14;"></div>Pending Review</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#007bff;"></div>In Progress</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#28a745;"></div>Done / Closed</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#dc3545;"></div>Rejected</div>
+  </div>
+</div>
+
+<!-- Error banner -->
+<div id="error-banner"></div>
+
+<!-- Calendar -->
+<div id="calendar-wrap">
+  <div id="calendar"></div>
+</div>
+
+<!-- RFC detail modal -->
+<div id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-summary">
+  <div id="modal">
+    <button id="modal-close" aria-label="Close dialog">&times;</button>
+    <div id="modal-key"></div>
+    <div id="modal-summary"></div>
+    <div class="detail-grid">
+      <span class="dl">Status</span>
+      <span class="dv"><span id="d-status" class="status-pill"></span></span>
+      <span class="dl">Priority</span>
+      <span class="dv" id="d-priority"></span>
+      <span class="dl">Project</span>
+      <span class="dv" id="d-project"></span>
+      <span class="dl">Assignee</span>
+      <span class="dv" id="d-assignee"></span>
+      <span class="dl">Reporter</span>
+      <span class="dv" id="d-reporter"></span>
+      <span class="dl">Impl. Date</span>
+      <span class="dv" id="d-date"></span>
+    </div>
+    <div id="modal-desc"></div>
+    <a id="modal-link" href="#" target="_blank" rel="noopener noreferrer">
+      Open in JIRA ↗
+    </a>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---- DOM refs ---- */
+  var loadingEl   = document.getElementById('loading-overlay');
+  var errorEl     = document.getElementById('error-banner');
+  var modalOvEl   = document.getElementById('modal-overlay');
+
+  /* ---- Error helper ---- */
+  function showError(msg) {
+    errorEl.textContent = 'Could not load RFC data: ' + msg;
+    errorEl.classList.add('visible');
+  }
+  function clearError() { errorEl.classList.remove('visible'); }
+
+  /* ---- Modal ---- */
+  function openModal(event) {
+    var p = event.extendedProps;
+
+    document.getElementById('modal-key').textContent     = p.key;
+    document.getElementById('modal-summary').textContent = p.summary || p.key;
+
+    var statusEl = document.getElementById('d-status');
+    statusEl.textContent   = p.status;
+    statusEl.style.background = event.backgroundColor || '#6f42c1';
+
+    document.getElementById('d-priority').textContent = p.priority  || '—';
+    document.getElementById('d-project').textContent  = p.project   || '—';
+    document.getElementById('d-assignee').textContent = p.assignee  || '—';
+    document.getElementById('d-reporter').textContent = p.reporter  || '—';
+    document.getElementById('d-date').textContent     = event.startStr;
+
+    document.getElementById('modal-desc').textContent =
+      p.description || '(No description provided)';
+
+    document.getElementById('modal-link').href = p.url;
+
+    modalOvEl.classList.add('visible');
+  }
+
+  function closeModal() { modalOvEl.classList.remove('visible'); }
+
+  document.getElementById('modal-close')
+    .addEventListener('click', closeModal);
+
+  modalOvEl.addEventListener('click', function (e) {
+    if (e.target === modalOvEl) closeModal();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  /* ---- FullCalendar initialisation ---- */
+  var calEl    = document.getElementById('calendar');
+  var calendar = new FullCalendar.Calendar(calEl, {
+    initialView: 'dayGridMonth',
+
+    headerToolbar: {
+      left:   'prev,next today',
+      center: 'title',
+      right:  'dayGridMonth,timeGridWeek,listMonth'
+    },
+
+    buttonText: {
+      today:  'Today',
+      month:  'Month',
+      week:   'Week',
+      list:   'List'
+    },
+
+    height:       'auto',
+    dayMaxEvents: true,   // shows "+N more" link when many events on one day
+
+    /* ---- Event source: Flask /api/rfcs ---- */
+    events: function (info, successCb, failureCb) {
+      clearError();
+      var url = '/api/rfcs'
+        + '?start=' + info.startStr.slice(0, 10)
+        + '&end='   + info.endStr.slice(0, 10);
+
+      fetch(url)
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (d) {
+              throw new Error(d.error || ('HTTP ' + res.status));
+            });
+          }
+          return res.json();
+        })
+        .then(function (data) { successCb(data); })
+        .catch(function (err) {
+          showError(err.message);
+          failureCb(err);
+        });
+    },
+
+    loading: function (isLoading) {
+      if (isLoading) {
+        loadingEl.classList.add('visible');
+      } else {
+        loadingEl.classList.remove('visible');
+      }
+    },
+
+    /* ---- Interactions ---- */
+    eventClick: function (info) {
+      info.jsEvent.preventDefault();
+      openModal(info.event);
+    },
+
+    eventDidMount: function (info) {
+      // Native tooltip — useful when the title is truncated
+      info.el.setAttribute('title', info.event.extendedProps.summary);
+    }
+  });
+
+  calendar.render();
+})();
+</script>
+
+</body>
+</html>
