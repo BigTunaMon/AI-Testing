@@ -29,9 +29,8 @@ def _jira_client() -> JiraClient:
     """Build a JiraClient from environment variables."""
     return JiraClient(
         base_url=os.environ["JIRA_BASE_URL"],
-        pat=os.environ.get("JIRA_PAT") or None,
-        username=os.environ.get("JIRA_USERNAME") or None,
-        password=os.environ.get("JIRA_PASSWORD") or None,
+        email=os.environ["JIRA_EMAIL"],
+        api_token=os.environ["JIRA_API_TOKEN"],
     )
 
 
@@ -77,11 +76,13 @@ def get_rfcs() -> Response:
         start_date = raw_start[:10] if raw_start else None
         end_date = raw_end[:10] if raw_end else None
 
+        filter_id = os.environ.get("JIRA_FILTER_ID") or None
         projects_raw = os.environ.get("JIRA_PROJECTS", "")
         projects = [p.strip() for p in projects_raw.split(",") if p.strip()] or None
         date_field = os.environ.get("JIRA_IMPL_DATE_FIELD", "duedate")
 
         events = client.search_rfcs(
+            filter_id=filter_id,
             projects=projects,
             date_field=date_field,
             start_date=start_date,

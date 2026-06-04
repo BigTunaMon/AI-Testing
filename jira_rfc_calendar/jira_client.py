@@ -36,36 +36,43 @@ def _status_color(status: str) -> str:
     return _STATUS_COLORS.get(status.lower(), _DEFAULT_COLOR)
 
 
-class JiraClient:
-    """JIRA Server / Data Center REST API v2 client.
+def _adf_to_text(node: Any, _depth: int = 0) -> str:
+    """Recursively extract plain text from an Atlassian Document Format node."""
+    if isinstance(node, str):
+        return node
+    if not isinstance(node, dict):
+        return ""
+    text = node.get("text", "")
+    for child in node.get("content", []):
+        text += _adf_to_text(child, _depth + 1)
+    if node.get("type") in ("paragraph", "heading", "listItem") and _depth > 0:
+        text += "\n"
+    return text
 
-    Authenticates via Personal Access Token (recommended) or Basic auth.
+
+class JiraClient:
+    """JIRA Cloud REST API v3 client.
+
+    Authenticates via email + API token (Basic auth).
+    Generate an API token at: https://id.atlassian.com/manage-profile/security/api-tokens
     """
 
-    _API = "/rest/api/2"
+    _API = "/rest/api/3"
 
     def __init__(
         self,
         base_url: str,
-        pat: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        email: str,
+        api_token: str,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._session = requests.Session()
-        self._session.headers.update(
-            {"Accept": "application/json", "Content-Type": "application/json"}
-        )
-
-        if pat:
-            self._session.headers["Authorization"] = f"Bearer {pat}"
-        elif username and password:
-            creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-            self._session.headers["Authorization"] = f"Basic {creds}"
-        else:
-            raise ValueError(
-                "Provide JIRA_PAT or both JIRA_USERNAME and JIRA_PASSWORD."
-            )
+        creds = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+        self._session.headers.update({
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Basic {creds}",
+        })
 
     # ------------------------------------------------------------------
     # Public interface
@@ -73,6 +80,7 @@ class JiraClient:
 
     def search_rfcs(
         self,
+        filter_id: Optional[str] = None,
         projects: Optional[List[str]] = None,
         date_field: str = "duedate",
         start_date: Optional[str] = None,
@@ -83,13 +91,17 @@ class JiraClient:
 
         Parameters
         ----------
-        projects:   Optional list of JIRA project keys to restrict the query.
+        filter_id:  JIRA saved filter ID (e.g. "11588"). When provided, the
+                    query is scoped to that filter instead of building JQL from
+                    projects/issue type. Date range bounds are still applied.
+        projects:   Optional list of JIRA project keys (used when filter_id
+                    is not set).
         date_field: JIRA field ID used as the calendar date (default: duedate).
         start_date: ISO date string (YYYY-MM-DD) — lower bound for date_field.
         end_date:   ISO date string (YYYY-MM-DD) — upper bound for date_field.
         max_results: Hard cap on total issues fetched (paginates internally).
         """
-        jql = self._build_jql(projects, date_field, start_date, end_date)
+        jql = self._build_jql(filter_id, projects, date_field, start_date, end_date)
         fields = [
             "summary", "status", "priority", "assignee", "reporter",
             date_field, "description", "project", "created", "updated",
@@ -133,15 +145,19 @@ class JiraClient:
 
     @staticmethod
     def _build_jql(
+        filter_id: Optional[str],
         projects: Optional[List[str]],
         date_field: str,
         start_date: Optional[str],
         end_date: Optional[str],
     ) -> str:
-        conditions = ["issuetype = RFC"]
-        if projects:
-            quoted = ", ".join(f'"{p}"' for p in projects)
-            conditions.append(f"project in ({quoted})")
+        if filter_id:
+            conditions = [f"filter = {filter_id}"]
+        else:
+            conditions = ["issuetype = RFC"]
+            if projects:
+                quoted = ", ".join(f'"{p}"' for p in projects)
+                conditions.append(f"project in ({quoted})")
         if start_date:
             conditions.append(f'{date_field} >= "{start_date}"')
         if end_date:
@@ -168,7 +184,13 @@ class JiraClient:
         reporter = (fields.get("reporter") or {}).get("displayName", "")
         project = (fields.get("project") or {}).get("name", "")
 
-        desc: str = fields.get("description") or ""
+        # JIRA Cloud returns description as Atlassian Document Format (ADF)
+        # — extract plain text from it, fall back to empty string.
+        raw_desc = fields.get("description") or ""
+        if isinstance(raw_desc, dict):
+            desc = _adf_to_text(raw_desc)
+        else:
+            desc = str(raw_desc)
         if len(desc) > 600:
             desc = desc[:597] + "…"
 
