@@ -1,0 +1,44 @@
+# Deploy jira_rfc_calendar to Azure App Service
+#
+# Required GitHub Secrets (Settings → Secrets → Actions):
+#   AZURE_WEBAPP_PUBLISH_PROFILE  — download from Azure Portal:
+#       App Service → Overview → "Download publish profile"
+#
+# Required GitHub Variables (Settings → Variables → Actions):
+#   AZURE_WEBAPP_NAME  — your App Service name, e.g. bgs-rfc-calendar
+
+name: Deploy RFC Calendar to Azure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "jira_rfc_calendar/**"
+      - ".github/workflows/azure-deploy.yml"
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: jira_rfc_calendar
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: jira_rfc_calendar
