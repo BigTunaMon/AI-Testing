@@ -73,6 +73,7 @@
       font-size: 0.875rem;
     }
 
+    #error-banner a { color: #7f1d1d; font-weight: 600; }
     #error-banner.visible { display: block; }
 
     /* ---- Calendar card ---- */
@@ -302,7 +303,9 @@
 
   /* ---- Error helper ---- */
   function showError(msg) {
-    errorEl.textContent = 'Could not load RFC data: ' + msg;
+    errorEl.innerHTML =
+      '<strong>Could not load RFC data:</strong> ' + msg +
+      ' &mdash; <a href="/health" target="_blank" rel="noopener">Check server health</a>';
     errorEl.classList.add('visible');
   }
   function clearError() { errorEl.classList.remove('visible'); }
@@ -369,11 +372,14 @@
     /* ---- Event source: Flask /api/rfcs ---- */
     events: function (info, successCb, failureCb) {
       clearError();
-      var url = '/api/rfcs'
+      // Use an absolute URL so the fetch works whether the page is loaded
+      // directly or embedded in a SharePoint iframe.
+      var base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+      var url = base + '/api/rfcs'
         + '?start=' + info.startStr.slice(0, 10)
         + '&end='   + info.endStr.slice(0, 10);
 
-      fetch(url)
+      fetch(url, { credentials: 'same-origin' })
         .then(function (res) {
           if (!res.ok) {
             return res.json().then(function (d) {
@@ -384,7 +390,10 @@
         })
         .then(function (data) { successCb(data); })
         .catch(function (err) {
-          showError(err.message);
+          var msg = err.message === 'Failed to fetch'
+            ? 'Cannot reach the calendar server. Is Flask running? Open <a href="/health" target="_blank">/health</a> to verify, and ensure the server uses HTTPS if embedded in SharePoint.'
+            : err.message;
+          showError(msg);
           failureCb(err);
         });
     },

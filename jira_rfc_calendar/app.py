@@ -5,6 +5,7 @@ import os
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, make_response, render_template, request
+from flask_cors import CORS
 
 from jira_client import JiraClient
 
@@ -19,6 +20,10 @@ _JIRA_BASE_URL = os.environ.get("JIRA_BASE_URL", "")
 
 # CSP frame-ancestors value — allows SharePoint to embed this app in an iframe
 _SHAREPOINT_ORIGIN = os.environ.get("SHAREPOINT_ORIGIN", "https://*.sharepoint.com")
+
+# Allow cross-origin requests from SharePoint (needed when the iframe origin
+# differs from the Flask server origin, e.g. tunnelled HTTPS endpoints)
+CORS(app, origins=[_SHAREPOINT_ORIGIN, "https://*.sharepoint.com"])
 
 
 # ------------------------------------------------------------------
@@ -58,6 +63,22 @@ def index() -> Response:
     return make_response(
         render_template("index.html", jira_base_url=_JIRA_BASE_URL)
     )
+
+
+@app.route("/health")
+def health() -> Response:
+    """Simple liveness check. Visit /health in a browser to confirm the server
+    is reachable before embedding in SharePoint."""
+    jira_url = os.environ.get("JIRA_BASE_URL", "NOT SET")
+    email_set = bool(os.environ.get("JIRA_EMAIL"))
+    token_set = bool(os.environ.get("JIRA_API_TOKEN"))
+    return jsonify({
+        "status": "ok",
+        "jira_base_url": jira_url,
+        "jira_email_configured": email_set,
+        "jira_api_token_configured": token_set,
+        "jira_filter_id": os.environ.get("JIRA_FILTER_ID", "NOT SET"),
+    })
 
 
 @app.route("/api/rfcs")
